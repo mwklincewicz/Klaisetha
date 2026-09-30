@@ -1,3 +1,4 @@
 *.sav
 __pycache__/
 .DS_Store
+.vscode.code-workspace
