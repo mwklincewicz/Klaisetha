@@ -1,12 +1,13 @@
 """
 Shared preprocessing module for the DPES 2023 late-decider thesis.
 
-Builds the feature set and target variable: the 6-item political cynicism
-index, age (continuous, plus a 7-band Proulx-et-al.-style categorical
-version for the baseline model), target_shifter, and 7 control
+Builds the feature set and target variable.
+- political cynicism index, age (continuous, plus a 7-band Proulx-et-al.-style categorical
+version for the baseline model), target_shifter, and the control
 variables (political interest, urbanization, gender, education, income,
-marital status, religion).
+marital status, religion, social media use, leader-vs-program importance).
 
+can import this from modeling_pipeline.py
 """
 import numpy as np
 import pandas as pd
@@ -37,7 +38,7 @@ def load_and_prepare(sav_path="DPES2023DATASET.sav"):
 
     norm_cols = [f"{c}_norm" for c in ["V252", "V253", "V326", "V261", "V262", "V322"]]
     # skipna=False: a respondent needs all 6 items or the index is NaN --
-    # keeps this consistent with the population the alpha check used.
+
     df["political_cynicism_index"] = df[norm_cols].mean(axis=1, skipna=False)
 
     # ==========================================================================
@@ -55,7 +56,7 @@ def load_and_prepare(sav_path="DPES2023DATASET.sav"):
     df_clean["target_shifter"] = (df_clean[intent_col] != df_clean[vote_col]).astype(int)
 
     # ==========================================================================
-    # AGE -- a primary variable
+    # AGE -- primary variable, not a control 
     # Continuous version for XGBoost, which can learn a non-linear age
     # effect directly; a 7-band Proulx-et-al.-style categorical version for
     # the logit baseline, which needs explicit bins for the same purpose.
@@ -66,11 +67,16 @@ def load_and_prepare(sav_path="DPES2023DATASET.sav"):
     df_clean["age_band"] = pd.cut(df_clean["age"], bins=age_bins, labels=age_labels)
 
     # ==========================================================================
-    # CONTROL VARIABLES (7) -- the set Proulx et al. (2025) control for.
+    # CONTROL VARIABLES (9) -- Proulx et al. (2025)'s original 7, plus two
+    # additional "cheap" controls added for this thesis: social media use
+    # (Q02f, post-election survey 1) and leader-vs-program importance
+    # (P55, pre-election survey). 
     # ==========================================================================
     df_clean["political_interest"] = df_clean["S043"].replace([994, 995, 999], np.nan)
-    # Reversed version for readability. Using this version means higher
-    # always="more interested" matching every other feature.
+    # Reversed version for readability: raw S043 runs 1=very interested to
+    # 4=not at all interested, so a positive SHAP value on the raw column
+    # would otherwise read backwards. 
+    # higher always means "more interested," matching every other feature.
     df_clean["political_interest_reversed"] = 5 - df_clean["political_interest"]
     df_clean["urbanization"] = df_clean["Urbanity"]
     df_clean["is_woman"] = df_clean["V010"].map({1: 0, 2: 1, 3: np.nan})
@@ -91,12 +97,24 @@ def load_and_prepare(sav_path="DPES2023DATASET.sav"):
     df_clean["religion"] = df_clean["V351"].replace([994, 995, 999], np.nan)
 
     # Collapse religion categories with very few respondents into a shared
-    # "other" bucket (coded 99). it's specifically needed for the logit baseline.
+    # "other" bucket (coded 99).
     rare_threshold = 30
     religion_counts = df_clean["religion"].value_counts()
     rare_categories = religion_counts[religion_counts < rare_threshold].index
     df_clean["religion"] = df_clean["religion"].replace(
         {cat: 99 for cat in rare_categories}
+    )
+
+    # --- Social media use (Q02f) ---
+    # Raw 0-7 (days/week social media was used to follow party/candidate
+    # news during the campaign)
+    df_clean["social_media_use"] = df_clean["Q02f"].replace([993, 994, 995, 999], np.nan)
+
+    # --- Leader vs. program importance (P55) ---
+    # Raw 0-10 (0 = party leaders much more important, 10 = party programs
+    # much more important); pre-election survey. 
+    df_clean["leader_program_importance"] = df_clean["P55"].replace(
+        [993, 994, 995, 999], np.nan
     )
 
     return df_clean, norm_cols
@@ -107,4 +125,5 @@ TARGET_COL = "target_shifter"
 CONTROL_COLS = [
     "political_interest", "urbanization", "is_woman",
     "edu_class", "income_class", "marital_status", "religion",
+    "social_media_use", "leader_program_importance",
 ]
