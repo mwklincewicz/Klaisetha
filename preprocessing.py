@@ -38,9 +38,24 @@ def load_and_prepare(sav_path="DPES2023DATASET.sav"):
         df[f"{col}_norm"] = (5 - valid) / 4.0
 
     norm_cols = [f"{c}_norm" for c in ["V252", "V253", "V326", "V261", "V262", "V322"]]
-    # skipna=False: a respondent needs all 6 items or the index is NaN --
-    # keeps this consistent with the population the alpha check used.
-    df["political_cynicism_index"] = df[norm_cols].mean(axis=1, skipna=False)
+    
+    # Prorated scale score: average whatever items are present, but only for
+    # respondents who answered at least MIN_VALID_CYNICISM_ITEMS of the 6 
+    # This recovers a chunk of the complete-case N lost to the previous 
+    # all-6-required rule (skipna=False), without diluting the scale for 
+    # respondents who barelyanswered it. 
+    MIN_VALID_CYNICISM_ITEMS = 4  # out of 6
+    n_valid_items = df[norm_cols].notna().sum(axis=1)
+    cynicism_mean = df[norm_cols].mean(axis=1, skipna=True)
+    df["political_cynicism_index"] = cynicism_mean.where(
+        n_valid_items >= MIN_VALID_CYNICISM_ITEMS, np.nan
+    )
+
+    # Diagnostic: how many respondents are recovered at each threshold, vs.
+    # the all-6-items 
+    print("Cynicism index: respondents with >=N of 6 items present:")
+    for n in range(6, 0, -1):
+        print(f"  >={n} items: {(n_valid_items >= n).sum()}")
 
     # ==========================================================================
     # TARGET VARIABLE: target_shifter
